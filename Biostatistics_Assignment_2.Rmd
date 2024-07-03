@@ -1,0 +1,352 @@
+---
+title: "Biostatistics Assignment 2"
+author: "S2550941 - Hrushikesh Vazurkar"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls(all = TRUE))
+```
+
+## Question 1
+
+### 1(a) Model and parameter definition
+
+An appropriate model to show effect of SBP(as a single numeric variable) on CHD(or no CHD) should be a logistic regression model with the equation as follows:
+\[
+log(\frac{p}{1-p}) = \beta_0 + beta_1.SBP
+\]
+where p = probability(log odds) of developing CHD, SBP = varying SBP levels encoded as numbers(given), \(beta_0\) = Slope intercept, \(beta_1\) = representative of effect of SBP on CHD(log odds).
+
+### 1(b) Structural relationships imposed on CHD log odds in the logistic model by SBP.
+
+Yes. The logistic regression model imposes a linear relationship between SBP categories (numerical variable) and the log odds ratio of CHD. Each unit increase or decrease in the SBP value will uniformly change the log odds ratio, as denoted by \(beta_1\) coefficient in the regression model.
+
+### 1(c) Logistic regression model of SBP vs CHD
+
+```{r}
+# Data given in the question as a dataframe
+data <- data.frame(
+  SBP = c(0,1,2,3,4,5,6,7),
+  CHD = c(3, 17, 12, 16, 12, 8, 16, 8),
+  NoCHD = c(153, 235, 272, 255, 127, 77, 83, 35)
+)
+
+# define a GLM model with family binomial = as there are 2 cases possible, CHD or No CHD
+sbp_vs_chd_model <- glm(cbind(CHD, NoCHD) ~ SBP, data = data, family = binomial)
+
+summary(sbp_vs_chd_model) # model summary to study variation
+```
+For the logistic regression between SBP and (CHD, NoCHD), the value of intercept $\beta_0$ is -3.42264 and $\beta_1$ is 0.26943. Since $\beta_1$ value is positive, it means that an increase in the unit value of SBP corresponds to increase in log odds ratio, or simply SBP and log odds of CHD are positively correlated.
+
+Moreover, the positive correlation between SBP and CHD is statistically significant as p-value is much lower than 0.05. Also, an AIC of 43.1 denotes a good balance between goodness-of-fit and model complexity.
+
+### 1(d) Estimated log odds ratio of a individuals with SBP \(\in\) [137, 146] to SBP \(\in\) [117, 126]
+
+The estimated log odds ratio of individuals with SBP in \(\in\) [137, 146] to SBP \(\in\) [117, 126] equals:
+
+\[
+  Odds\,Ratio = \frac{e^{\beta_0 + \beta_1 \times 3}}{e^{\beta_0 + \beta_1 \times 2}}
+\]
+
+The below R code calculates Odds ratio for \(\in\) [137, 146] to SBP \(\in\) [117, 126]
+
+```{r}
+intercept <- coef(sbp_vs_chd_model)["(Intercept)"]
+sbp_coefficient <- coef(sbp_vs_chd_model)["SBP"]
+odds_137_146 <- exp(intercept + sbp_coefficient*3)
+odds_117_126 <- exp(intercept + sbp_coefficient)
+
+odds_137_146/odds_117_126
+```
+The estimated odds ratio value is 1.714055.
+
+### 1(e) Estimated vs Observed Log Odds plot with adequacy of the fit.
+
+```{r}
+SBP_encoded <- c(0, 1, 2, 3, 4, 5, 6, 7) # SBP numerical values as given in the question
+
+obs_log_odds <- log(data$CHD / data$NoCHD) # observed log odds
+
+pred_log_odds <- predict(sbp_vs_chd_model, type = "link") # predicted log odds by the model
+
+# Plot of observed vs predicted log odds
+plot(SBP_encoded, obs_log_odds, type = "o", pch = 16, col = "darkgreen",
+     xlab = "SBP", ylab = "Log Odds of CHD", 
+     main = "Observed vs Predicted Log Odds - CHD")
+
+# Add the predicted log odds to the plot
+lines(SBP_encoded, pred_log_odds, type = "o", pch = 16, col = "red")
+
+# Add a legend
+legend("bottomright", legend = c("Observed", "Predicted"),
+       col = c("darkgreen", "red"), pch = 16, lty = 1)
+
+```
+
+To judge the adequacy of the fit, residual plot can be analysed for the SBP vs (CHD, NoCHD) logistic regression model.
+
+```{r}
+residuals <- residuals(sbp_vs_chd_model, type = "response")
+plot(residuals)
+```
+As seen from the above plot, the residuals are randomly distributed around 0 with no particular patterns. Hence, through residual analysis, it can be said with confidence that the model fitting between SBP and CHD is good. This is further augmented by the AIC score of 43.096 which shows good balance between complexity and goodness-of-fit.
+
+## Question 2
+
+### 2(a) Generate hazard function with gamma distributions with different parameters and comment on the different type of curves.
+
+The hazard function(Gamma) is:
+\[
+h(x) = \frac{f(x)}{S(x)} = \frac{x^{\beta - 1} e^{-\frac{x}{\alpha}}}{(\Gamma(\beta) - \Gamma(\beta, \frac{x}{\alpha})) \alpha^\beta \Gamma(\beta)}
+\]
+
+Using this hazard function(Gamma), various gamma plots can be plotted for the Hazard function.
+
+```{r}
+# Load required libraries
+library(ggplot2)
+library(scales)  # for comma formatting
+
+x <- seq(0, 10, by = 0.1) # generate 10 values
+
+# define shape and theta values for gamma distribution curve variation
+shape_values <- c(0.5, 1, 2); theta_values <- c(1, 1/2, 1/3)
+
+df <- data.frame(x = x) # data frame to storing hazard functions (gamma)
+
+# Hazard function(h(x)) computation: h(x) = f(x)/S(x) 
+for (shape in shape_values) {
+  for (theta in theta_values) {
+    fx <- function(x, shape, theta) { # f(x)
+      x^(1/theta - 1) * exp(-x / shape)
+    }
+    
+    Sx <- function(x, shape, theta) { # S(x)
+      (gamma(1/theta) - pgamma(x / shape, 1/theta, scale = 1, lower.tail = FALSE)) /
+        (shape^theta * gamma(1/theta))
+    }
+    
+    hazard <- fx(x, shape, theta) / Sx(x, shape, theta) #hazard function
+    
+    # Add hazard function to dataframe
+    df[[paste("shape", shape, "theta", theta, sep = " ")]] <- hazard
+  }
+}
+
+# Melt dataframe for plotting
+df <- reshape2::melt(df, id.vars = "x")
+
+# Plotting the hazard functions
+ggplot(df, aes(x = x, y = value, color = variable)) +
+  geom_line() +
+  labs(title = "Hazard Functions",
+       x = "x",
+       y = "h(x)",
+       color = "Parameters") +
+  theme_minimal()
+
+```
+
+The different types of gamma distributions which are generated through combinations of various shapes and theta values are:
+\begin{itemize}
+  \item \textbf{Increasing Hazard rate -} The gamma distribution increases with increase in shape k, showing the odds of an event occuring increasing with time. A few examples of such events are automotive vehicles or electronic devices with time.
+  \item \textbf{Decreasing Hazard rate -} For certain combinations of shape k and theta values yeild decreasing gamma distributions. Such hazard functions signify the decrease of the odds of an event happening with time, or higher possibility of earlier failure. This hazard rate is much more relevant to biomedical studies and studying chronic diseases.
+  \item \textbf{Exponential Hazard rate -} When shape k = 1, the hazard function shows exponential distribution, where hazard function has constant failure rate.
+\end{itemize}
+
+### 2(b) Describe situations when gamma distribution is reasonable or unreasonable to model time to an event.
+
+\begin{itemize}
+  \item \textbf{Gamma distribution reasonable -} Modelling time to healing wounds after undergoing treatment can be reasonably modelled by gamma distribution as wounds heal rapidly initially and then the healing rate plateaus until the healing process completes. This can be modelled by adjusting shape and theta parameters to capture the trend of wounds healing for a study.
+  \item \textbf{Gamma distribution unreasonable -} Gamma distribution would not be reasonable for modelling survival duration for patients with a chronic spreading disease, as there is a constant risk of death and not much chance of recovery.
+\end{itemize}
+
+## Question 3
+
+Given Hazard Rate \(h_T(t) = 0.13 \times t^{0.3}\) for a random variable T. Find the median of T.
+
+To find the median of random variable T, we need to find the Survival Rate \(S_T(t)\) corresponding to the given Hazard Rate. To find \(S_T(t)\), we need to find Cumulative Hazard function \(H_T(t)\) from \(h_T(t)\), and then correspondingly find \(S_T(t)\).
+\begin{itemize}
+  \item \(H_T(t)\)
+  \begin{equation}
+    H_T(t) = \int_{0}^{t} h_T(u) du = 0.13\left[\frac{u^{1.3}}{1.3}\right] = 0.1t^{1.3}
+    \label{eq:Ht}
+  \end{equation}
+  \item \(S_T(t)\)
+  \begin{equation}
+    S_T(t) = e^{-H_T(t)}
+    \label{eq:St}
+  \end{equation}
+\end{itemize}
+
+Moreover, to find median of T, we need to find a time m such that \(S_T(m) = 0.5\). Solving using the above Equations \ref{eq:Ht} and \ref{eq:St}:
+\[
+S_T(t) = e^{-0.1m^{1.3}} = 1/2
+\]
+\[
+0.1m^{1.3} = ln(2)
+\]
+\[
+m = (10.ln(2))^{\frac{10}{13}} = 4.43
+\]
+
+Hence, the median of the random variable T is 4.43.
+
+## Question 4
+
+\textbf{To prove:} Kaplan-Meier Estimator reduces to Emperical Estimator for Survival Function (Rate) there are no censored observations.
+
+\textbf{Proof:}
+\begin{equation}
+      S_T(t) = \frac{no.\,of\,individuals\,with\,event\,time\,>\,t}{no.\,of\,individuals\,in\,dataset} = \frac{\#\{j:t_j > t\}}{n}
+  \label{eq:StEmpEst}
+\end{equation}
+
+\begin{equation}
+  S_{KM}(t_j) = \frac{n_j - d_j}{n_j} \times S_{KM}(t_{j-1})
+  \label{eq:StKMEst}
+\end{equation}
+where \(n_j\) = number of individuals at risk at time \(t_j\) and \(d_j\) = number of events in \((t_{j-1}, t_j]\).
+\begin{enumerate}
+    \item For the Empirical Estimator of the Survival Function, we can calculate the Survival Function \(S_T(t)\) through Equation \ref{eq:StEmpEst}:
+\begin{equation}
+    S_T(t_1) = \frac{n_1 - d_1}{n}
+    \label{eq:empt1}
+\end{equation}
+as \(\#\{j:t_j > t\}\) = \(n_j - d_j\) = total individuals at risk at time t - no of events at time t.\\ \\
+Similarly,
+\begin{equation}
+    S_T(t_2) = \frac{n_2 - d_2}{n}
+    \label{eq:empt2}
+\end{equation}
+
+and so on.
+
+\item For Kaplan-Meier Estimator of the Survival Function, we can calculate the Survival Function through Equation \ref{eq:StKMEst}:
+\begin{equation}
+    S_{KM}(t_1) = \frac{n_1 - d_1}{n}
+    \label{eq:km1}
+\end{equation}
+
+\begin{equation}
+    S_{KM}(t_2) = \frac{n_2 - d_2}{n_2} \times S_{KM}(t_1) = \frac{n_2 - d_2}{n_2} \times \frac{n_1 - d_1}{n} = \frac{n_2 - d_2}{n}
+    \label{eq:km2}
+\end{equation}
+as can safely conclude that \(n_{j+1} = n_j + d_j\) as all the individuals are taken into consideration without skipping due to non-censoring.
+
+\end{enumerate}
+
+## Question 5
+
+For the Log-rank test for the Survival functions of 2 groups - Group 1 and Group 2, we have:
+\begin{equation}
+    U = \sum_{j=1}^J (d_{1j} - e_{1j}) = \sum_{j=1}^J (d_{1j} - n_{1j}.\frac{d_j}{n_j})
+    \label{eq:logrank}
+\end{equation}
+
+To prove: \(U = \sum_{j=1}^J\left\{\frac{n_{1j}.n_{2j}}{n_j}.(\widehat{h_{1j}} - \widehat{h_{2j}})\right\}\)
+
+Proof:
+\[
+U = \sum_{j=1}^J\left\{\frac{n_{1j}.n_{2j}}{n_j}.(\widehat{h_{1j}} - \widehat{h_{2j}})\right\} = \sum_{j=1}^J \left(\frac{n_{2j}.d_{1j} - n_{1j}.d_{2j}}{n_j}\right)
+\]
+considering \(\widehat{h_{1j}} = \frac{d_{1j}}{n_{1j}}\) and \(\widehat{h_{2j}} = \frac{d_{2j}}{n_{2j}}\).
+\begin{equation}
+    U = \sum_{j=1}^J \left(\frac{n_{2j}.d_{1j}}{n_j} - \frac{n_{1j}.d_{2j}}{n_j}\right) = \sum_{j=1}^J \left(\frac{(n_j - n_{1j}).d_{1j}}{n_j} - \frac{(d_j - d_{1j}).n_{1j}}{n_j}\right)
+    \label{eq:final}
+\end{equation}
+where \(d_{1j} + d_{2j} = d_j\) and \(n_{1j} + n_{2j} = n_j\). Moreover, multiplying the internal terms in the above Equation \ref{eq:final}, we get:
+\[
+U = \sum_{j=1}^J \left(d_{1j} - \frac{n_{1j}}{n_j}d_j\right)
+\]
+which is same as Equation \ref{eq:logrank}
+Hence proved.
+
+## Question 6
+
+### 6(a) Kaplan-Meier curve to Surgical and Percutaneous groups with 95% CI.
+
+```{r}
+# Load required libraries
+library(survival)
+library(ggplot2)
+library(survival)
+library(survminer)
+
+data <- read.table("pd.txt", header = TRUE) # read input file pd.txt
+
+kmfit <- survfit(Surv(time, status) ~ type, data = data) # Surv and survfir to apply Kaplan-Meier Estimation for survival function
+
+# Kaplan-Meier curves with 95% CI
+g <- ggsurvplot(kmfit, data = data, pval = TRUE, conf.int = TRUE,
+                risk.table = TRUE, risk.table.col = "strata",
+                xlab = "Time(months)", ylab = "Survival Odds",
+                main = "Kaplan-Meier Estimation Curve as per Tube Placement for Dialysis",
+                legend.labs = c("Surgical", "Percutaneous"))
+
+g
+```
+From the diagram above, the Kaplan-Meier estimations for both groups for Surgical and Percutaneous are different largely. However, the 95% Confidence Intervals are highly overlapping. 
+
+Also, from the time-scale from the above figure, it can be observed that the individuals at risk for Surgical is dropping steeply, whereas Percutaneous is dropping less steeply than Surgical group.
+
+### 6(b) Give estimates and justify the median time to exit-site infection for both Surgical and Percutaneous groups.
+
+Here, through the summary of the Kaplan-Meier estimate, we can get insights about median times for both groups.
+
+```{r}
+summary(kmfit)
+```
+For median, the we need the smallest time when Survival Rate has to be $\leq$ 0.5. 
+
+For Percutaneous group, in the survival column in the summary, it can be seen that for every time interval, the survival probability is greater than 0.5. Hence, there is no median value for this group.
+
+For Surgical group, in the survival column in the summary, it can be seen that for every time interval, the survival probability is $\leq$ 0.5 for the last 3 rows. Hence, median corresponds to the time interval for which the survival value is closest to 0.5.
+
+The below code finds the median time interval values for both the groups.
+
+```{r}
+surgical = summary(kmfit)$strata == "type=Surgical" # Stratas for surgical
+percutaneous = summary(kmfit)$strata == "type=Percutaneous" # Stratas for percutaneous
+
+# median time
+median_time_surgical <- summary(kmfit)$time[surgical][summary(kmfit)$surv[surgical] <= 0.5][1]
+median_time_percutaneous <- summary(kmfit)$time[percutaneous][summary(kmfit)$surv[percutaneous] <= 0.5][1]
+
+cat("Median time (Surgical):", median_time_surgical, "months\n")
+cat("Median time (Percutaneous):", median_time_percutaneous, "months\n")
+```
+### 6(c) Log-rank test
+
+For log-rank test, the null and alternative hypothesis are as follows:
+
+$H_0$: There is no statistically significant difference between Kaplan-Meier estimation curves for both groups Surgical and Percutaneous.
+
+$H_1$: There is a statistically significant difference between Kaplan-Meier estimation curves for both groups Surgical and Percutaneous.
+
+```{r}
+# Log Rank test
+logrank <- survdiff(Surv(time, status) ~ type, data = data)
+logrank
+```
+From the results of the Log Rank test, the p value is 0.1 which is greater 0.05. Hence, we can conclude that the difference between Kaplan-Meier curves for both groups Surgical and Percutaneous is statistically significant. Hence, null hypothesis $H_0$ rejected in this case.
+
+### 6(d) Is Peto-prentice test more significant than log-rank in this test ?
+
+Peto-prentice test is a weighted variant of the log-rank test, which gives higher importance or weight to events that occur earlier during the follow-up period for a study between various groups. Moreover, Peto-prentice test assumes that the hazard ratios between groups are constant with each time step. If that assumption holds, Peto-prentice test is likely to be more statistically significant than the Log-rank test.
+
+In this scenario, from the summary from \textbf{6(b)}, we can get the survival probabilities, and hence hazard rate for each group at each monitoring time interval. However, it is apparent that the hazard ratios are varying for with each time interval(months) when the results are being recorded. Moreover, the observations for Percutaneous group are censored at time 15.5 months whereas for Surgical group, the results are recorded till 26.5 months. Hence, the assumption of constant hazard ratios with time is voided.
+
+Therefore, we cannot expect Peto-prentice test to be more statistically significant than Log-rank test in this case. We have to perform the Peto-prentice test on these groups and verify.
+
+### 6(e) Peto-prentice test
+
+```{r}
+# Peto-prentice test
+peto_prentice <- survdiff(Surv(time, status) ~ type, data = data, rho = 1)
+peto_prentice
+```
+Here, after the Peto-prentice test, the p-value is 0.2, which is even lesser than the Log-rank test p-value of 0.1 (from 6(b)). Hence, Peto-prentice test is not statistically significant than Log-rank test in this case.
